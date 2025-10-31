@@ -88,7 +88,7 @@ def get_guba_comments(stock_code: str) -> str:
         stock_code: 股票代码，如 'sh600739' 或 'sz301011'
         
     Returns:
-        一个包含所有评论标题的字符串，以中文逗号“，”分隔。
+        一个包含所有评论标题的字符串，以换行符（\n）分隔。
     """
     if not (normalized_code := normalize_stock_code(stock_code)):
         return f"股票代码格式错误：'{stock_code}'。请使用标准格式，如：sh600739 或 sz301011"
@@ -156,8 +156,8 @@ def get_guba_comments(stock_code: str) -> str:
     if not all_comment_titles:
         return f"未找到股票 {stock_code} 的任何评论。"
     
-    # 按照要求，将所有评论标题用“中文逗号”拼接成一个长字符串
-    commit_string = "，".join(all_comment_titles)
+    # 【重要修改】使用换行符 \n 作为分隔符，这对于 LLM 分析更友好
+    commit_string = "\n".join(all_comment_titles)
     
     logging.info(f"为 {stock_code} 成功抓取 {len(all_comment_titles)} 条评论。")
     return commit_string
