@@ -84,10 +84,10 @@ def normalize_stock_code(code: str) -> Optional[str]:
 
 # --- 4. 核心工具逻辑 ---
 
-# --- V7.0: 适配节点1的 (String) 和 平台测试 (Dict) ---
+# --- V8.0 (最终修复版): 修复节点1 (String) 的传入问题 ---
 @mcp.tool()
 @guba_tool_handler
-def get_guba_comments(query: Dict[str, Any]) -> str: 
+def get_guba_comments(query: Any) -> str: # <---【关键修改 1】: 将 Dict[str, Any] 改为 Any
     """抓取股吧前5页评论标题
     
     Args:
@@ -190,10 +190,7 @@ def analyze_guba_sentiment(result: Dict[str, Any]) -> str:
         # 正确: 传入的是 {"result": "A\nB"}
         comments_string = result.get("result", "")
     elif isinstance(result, str):
-        # 兜底: 兼容单独测试时传入 "A\nB" (如您的 Cherry Studio 测试)
-        # 【注意】您的 Cherry Studio 测试会从这里进入，并且 *失败*
-        # 因为 V6.0 证明了平台不会将 String 传给 Dict 参数
-        # 但我们保留这个兜底以防万一
+        # 兜底: 兼容单独测试时传入 "A\nB" 
         comments_string = result
     else:
         return f"情感分析节点收到的参数格式错误：需要一个字典 {{'result': '...'}} 或一个字符串，但收到了 {type(result)}"
@@ -279,7 +276,7 @@ try:
     @mcp.prompt()
     def usage_guide() -> str:
         """提供使用指南"""
-        # --- V7.0: 更新示例 ---
+        # --- V8.0: 更新示例 ---
         return """欢迎使用股吧评论抓取工具！
 
 股票代码格式说明：
@@ -287,10 +284,11 @@ try:
 - 深圳证券交易所：sz + 6位数字，如 sz301011
 
 工具列表：
-1. get_guba_comments(query: Dict or Str)
+1. get_guba_comments(query: Any)
    抓取评论标题。
    (此工具用于接收 {"stock_code": "..."} 对象, 或 "sh..." 字符串)
-   示例: > get_guba_comments("sh600739")
+   示例 (工作流): > get_guba_comments("sh600739")
+   示例 (测试): > get_guba_comments({"stock_code": "sh600739"})
 
 2. analyze_guba_sentiment(result: Dict)
    分析评论情感。
