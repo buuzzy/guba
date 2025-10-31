@@ -155,19 +155,28 @@ def get_guba_comments(stock_code: str) -> str:
     logging.info(f"为 {stock_code} 成功抓取 {len(all_comment_titles)} 条评论。")
     return commit_string
 
-# --- V4.0: 还原情感分析工具的签名 ---
+# --- V3.0 (最终版): 修改情感分析工具的签名 ---
 @mcp.tool()
 @guba_tool_handler 
-def analyze_guba_sentiment(comments_string: str) -> str: # <---【关键修改 1】
+def analyze_guba_sentiment(result: Dict[str, Any]) -> str: # <---【关键修改 1】
     """
     分析以换行符分隔的评论字符串，计算平均情感分数。
     
     Args:
-        comments_string: 工作流平台传入的、以换行符分隔的评论字符串
+        result: 工作流平台传入的字典, 预期格式: {"result": "评论A\n评论B..."}
     """
     
-    # --- 【关键修改 2】: 移除 V3.0 的字典解析逻辑 ---
-    # 平台现在直接传递字符串，我们直接使用它
+    # --- 【关键修改 2】: 从传入的字典中提取出字符串 ---
+    comments_string = "" # 默认值
+    if isinstance(result, dict) and "result" in result:
+        comments_string = result.get("result", "")
+    elif isinstance(result, str):
+        # 兜底：以防平台某天又直接传了字符串
+        comments_string = result
+    else:
+        return f"情感分析节点收到的参数格式错误：需要一个字典 {{'result': '...'}} 或一个字符串，但收到了 {type(result)}"
+    # -----------------------------------------------
+
     if not comments_string or not comments_string.strip():
         return "没有可供分析的评论。"
         
@@ -255,10 +264,10 @@ try:
    抓取评论标题。
    示例: > get_guba_comments("sh600739")
 
-2. analyze_guba_sentiment(comments_string: str)
+2. analyze_guba_sentiment(result: Dict)
    分析评论情感。
-   (此工具用于接收上一步的 "评论A\n评论B..." 字符串)
-   示例: > analyze_guba_sentiment("评论A\n评论B")
+   (此工具用于接收上一步的 {"result": "..."} 对象)
+   示例: > analyze_guba_sentiment({"result": "评论A\n评论B"})
 """
 
     # 注册路由
@@ -275,4 +284,5 @@ except Exception as e:
 if __name__ == "__main__":
     logging.info(f"启动服务器，监听端口: {PORT}")
     uvicorn.run(app, host="0.0.0.0", port=PORT)
+
 
