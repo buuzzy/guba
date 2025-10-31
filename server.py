@@ -114,68 +114,69 @@ def get_guba_comments(stock_code: str) -> str:
         try:
             response = session.get(target_url, timeout=10) # 10 秒超时
             
-            # response.encoding = 'gb18030' # <-- 【修复】移除此行!
-            
             if response.status_code != 200:
                 logging.warning(f"抓取 {target_url} 失败，状态码: {response.status_code}")
-                break # 页面抓取失败，停止
+                break 
             
-            # 【修复】使用 response.content (原始字节流)
-            # 这让 BeautifulSoup 自己去检测编码 (它通常做得更好，会优先 UTF-8)
-            # 而不是依赖 response.text (它可能被错误的 HTTP 头误导)
-            
-            # Pylance (reportArgumentType) 在此报错是误报，BeautifulSoup 构造函数支持 bytes
             soup = BeautifulSoup(response.content, 'lxml') # type: ignore
             
             post_rows = soup.find_all('tr', class_='listitem')
             if not post_rows:
                 logging.info(f"{normalized_code} 第 {current_page} 页没有找到帖子。")
-                break # 没有更多帖子，停止
+                break 
                 
             comments_found_in_page = 0
             for row in post_rows:
                 try:
-                    # 仅提取标题
                     title_div = row.find('div', class_='title')
                     title_link = title_div.find('a') if title_div else None
                     title = title_link.text.strip() if title_link else ''
-                    if title: # 仅添加非空标题
+                    if title: 
                         all_comment_titles.append(title)
                         comments_found_in_page += 1
                 except Exception:
-                    continue # 忽略解析失败的单行
+                    continue 
             
             logging.info(f"{normalized_code} 第 {current_page} 页抓取 {comments_found_in_page} 条。")
             pages_crawled += 1
             current_page += 1
             
-            # 礼貌性暂停
             time.sleep(random.uniform(0.3, 1.0)) 
         
         except requests.exceptions.RequestException as req_err:
             logging.error(f"抓取 {normalized_code} 时网络请求失败: {req_err}")
-            # 抛出异常，让 @guba_tool_handler 装饰器统一处理
             raise req_err
 
     if not all_comment_titles:
         return f"未找到股票 {stock_code} 的任何评论。"
     
-    # 【重要修改】使用换行符 \n 作为分隔符，这对于 LLM 分析更友好
     commit_string = "\n".join(all_comment_titles)
     
     logging.info(f"为 {stock_code} 成功抓取 {len(all_comment_titles)} 条评论。")
     return commit_string
 
-# --- V2.0: 新增 SnowNLP 分析工具 ---
+# --- V3.0: 修改情感分析工具的签名 ---
 @mcp.tool()
 @guba_tool_handler 
-def analyze_guba_sentiment(comments_string: str) -> str:
+def analyze_guba_sentiment(result: Dict[str, Any]) -> str: # <---【关键修改 1】
     """
     分析以换行符分隔的评论字符串，计算平均情感分数。
     
     Args:
-        comments_string: 由 get_guba_comments 返回的、以换行符分隔的评论列表。
+        result: 工作流平台传入的字典, 预期格式: {"result": "评论A\n评论B..."}
     """
+    
+    # --- 【关键修改 2】: 从传入的字典中提取出字符串 ---
+    comments_string = "" # 默认值
+    if isinstance(result, dict) and "result" in result:
+        comments_string = result.get("result", "")
+    elif isinstance(result, str):
+        # 兜底：以防平台某天又直接传了字符串
+        comments_string = result
+    else:
+        return f"情感分析节点收到的参数格式错误：需要一个字典 {{'result': '...'}} 或一个字符串，但收到了 {type(result)}"
+    # -----------------------------------------------
+
     if not comments_string or not comments_string.strip():
         return "没有可供分析的评论。"
         
@@ -263,10 +264,10 @@ try:
    抓取评论标题。
    示例: > get_guba_comments("sh600739")
 
-2. analyze_guba_sentiment(comments_string: str)
+2. analyze_guba_sentiment(result: Dict)
    分析评论情感。
-   示例: > analyze_guba_sentiment("评论A\n评论B\n评论C")
-   (通常用于接收 get_guba_comments 的输出)
+   (此工具用于接收上一步的 {"result": "..."} 对象)
+   示例: > analyze_guba_sentiment({"result": "评论A\n评论B"})
 """
 
     # 注册路由
@@ -283,5 +284,4 @@ except Exception as e:
 if __name__ == "__main__":
     logging.info(f"启动服务器，监听端口: {PORT}")
     uvicorn.run(app, host="0.0.0.0", port=PORT)
-
 
