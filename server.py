@@ -19,6 +19,10 @@ import time
 import random
 from bs4 import BeautifulSoup
 
+# --- V2.0: 新增 SnowNLP 依赖 ---
+import snownlp
+# --------------------------------
+
 # --- 1. 日志配置 (同 server.py) ---
 logging.basicConfig(
     level=logging.INFO,
@@ -58,7 +62,7 @@ HEADERS = {
     'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8', 'Connection': 'keep-alive',
     'Referer': 'https://guba.eastmoney.com/'
 }
-DEFAULT_PAGES_TO_SCRAPE = 3 # 抓取 3 页
+DEFAULT_PAGES_TO_SCRAPE = 5 # 抓取 5 页
 # --------------------------------
 
 logging.info("Guba MCP 服务配置加载完毕")
@@ -162,6 +166,61 @@ def get_guba_comments(stock_code: str) -> str:
     logging.info(f"为 {stock_code} 成功抓取 {len(all_comment_titles)} 条评论。")
     return commit_string
 
+# --- V2.0: 新增 SnowNLP 分析工具 ---
+@mcp.tool()
+@guba_tool_handler 
+def analyze_guba_sentiment(comments_string: str) -> str:
+    """
+    分析以换行符分隔的评论字符串，计算平均情感分数。
+    
+    Args:
+        comments_string: 由 get_guba_comments 返回的、以换行符分隔的评论列表。
+    """
+    if not comments_string or not comments_string.strip():
+        return "没有可供分析的评论。"
+        
+    try:
+        # 按换行符分割成列表
+        comments = comments_string.strip().split('\n')
+        total_score = 0
+        valid_comments = 0
+        
+        logging.info(f"开始分析 {len(comments)} 条评论...")
+        
+        for comment in comments:
+            if comment and comment.strip(): # 确保评论非空
+                try:
+                    # 使用 snownlp 进行分析
+                    s = snownlp.SnowNLP(comment)
+                    total_score += s.sentiments
+                    valid_comments += 1
+                except Exception as e:
+                    # 忽略单个评论的分析错误
+                    logging.warning(f"SnowNLP 分析单条评论失败: {e} (评论: '{comment[:20]}...')")
+                    
+        if valid_comments == 0:
+            return "评论内容均无效，无法分析。"
+            
+        average_sentiment = total_score / valid_comments
+        
+        # 返回一个对 LLM 友好的分析结果
+        sentiment_desc = "中性"
+        if average_sentiment > 0.6:
+            sentiment_desc = "偏积极"
+        elif average_sentiment < 0.4:
+            sentiment_desc = "偏消极"
+            
+        result_str = f"分析了 {valid_comments} 条评论，平均情感分数为: {average_sentiment:.4f} ({sentiment_desc})"
+        logging.info(result_str)
+        return result_str
+        
+    except Exception as e:
+        # 这是整个函数的兜底错误
+        logging.error(f"SnowNLP 分析任务出错: {e}", exc_info=True)
+        return f"情感分析模块出错: {e}"
+# ------------------------------------
+
+
 # --- 5. FastAPI 和 MCP SSE 集成 (同 server.py) ---
 @app.get("/")
 async def health_check() -> Dict[str, str]:
@@ -199,9 +258,15 @@ try:
 - 上海证券交易所：sh + 6位数字，如 sh600739
 - 深圳证券交易所：sz + 6位数字，如 sz301011
 
-示例查询：
-> get_guba_comments("sh600739")  # 新华百货
-> get_guba_comments("sz000002")  # 万科A
+工具列表：
+1. get_guba_comments(stock_code: str)
+   抓取评论标题。
+   示例: > get_guba_comments("sh600739")
+
+2. analyze_guba_sentiment(comments_string: str)
+   分析评论情感。
+   示例: > analyze_guba_sentiment("评论A\n评论B\n评论C")
+   (通常用于接收 get_guba_comments 的输出)
 """
 
     # 注册路由
@@ -218,4 +283,5 @@ except Exception as e:
 if __name__ == "__main__":
     logging.info(f"启动服务器，监听端口: {PORT}")
     uvicorn.run(app, host="0.0.0.0", port=PORT)
+
 

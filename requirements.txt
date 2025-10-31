@@ -6,6 +6,7 @@ starlette==0.46.2
 pydantic==2.11.4
 pydantic_core==2.33.2
 pydantic-settings==2.9.1
+snownlp
 
 # HTTP 相关 (MCP 客户端 和 Guba 抓取器)
 h11==0.16.0
