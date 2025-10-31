@@ -1,4 +1,3 @@
-# guba_mcp_server.py
 import os
 import sys
 import re
@@ -54,7 +53,7 @@ PORT = int(os.environ.get("PORT", 8080))
 # --- 从 guba.py 引入的配置项 ---
 GUBA_LIST_URL_FORMAT = "https://guba.eastmoney.com/list,{stock_code}_{page}.html"
 HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0',
+    'User-Agent': 'Mozilla.5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
     'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8', 'Connection': 'keep-alive',
     'Referer': 'https://guba.eastmoney.com/'
@@ -110,12 +109,20 @@ def get_guba_comments(stock_code: str) -> str:
         
         try:
             response = session.get(target_url, timeout=10) # 10 秒超时
-            response.encoding = 'gb18030' # 股吧使用 gb18030 编码
+            
+            # response.encoding = 'gb18030' # <-- 【修复】移除此行!
+            
             if response.status_code != 200:
                 logging.warning(f"抓取 {target_url} 失败，状态码: {response.status_code}")
                 break # 页面抓取失败，停止
             
-            soup = BeautifulSoup(response.text, 'lxml')
+            # 【修复】使用 response.content (原始字节流)
+            # 这让 BeautifulSoup 自己去检测编码 (它通常做得更好，会优先 UTF-8)
+            # 而不是依赖 response.text (它可能被错误的 HTTP 头误导)
+            
+            # Pylance (reportArgumentType) 在此报错是误报，BeautifulSoup 构造函数支持 bytes
+            soup = BeautifulSoup(response.content, 'lxml') # type: ignore
+            
             post_rows = soup.find_all('tr', class_='listitem')
             if not post_rows:
                 logging.info(f"{normalized_code} 第 {current_page} 页没有找到帖子。")
@@ -211,3 +218,4 @@ except Exception as e:
 if __name__ == "__main__":
     logging.info(f"启动服务器，监听端口: {PORT}")
     uvicorn.run(app, host="0.0.0.0", port=PORT)
+
