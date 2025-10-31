@@ -84,10 +84,10 @@ def normalize_stock_code(code: str) -> Optional[str]:
 
 # --- 4. 核心工具逻辑 ---
 
-# --- V4.0: 修复 NLP 翻译问题 ---
+# --- V6.0: 修复 NLP 翻译问题 & 适配平台 ---
 @mcp.tool()
 @guba_tool_handler
-def get_guba_comments(query: Dict[str, Any]) -> str: # <---【关键修改 1】
+def get_guba_comments(query: Dict[str, Any]) -> str:
     """抓取股吧前5页评论标题
     
     Args:
@@ -97,12 +97,13 @@ def get_guba_comments(query: Dict[str, Any]) -> str: # <---【关键修改 1】
         一个包含所有评论标题的字符串，以换行符（\n）分隔。
     """
     
-    # --- 【关键修改 2】: 从传入的字典中提取 stock_code ---
+    # --- 关键修改: 适配节点1 (String) 和 平台测试 (Dict) ---
     stock_code = ""
     if isinstance(query, dict) and "stock_code" in query:
+        # 平台测试时, 传入 {"stock_code": "..."}
         stock_code = str(query.get("stock_code", ""))
     elif isinstance(query, str):
-        # 兜底：以防平台（如测试时）还是直接传了字符串
+        # 节点1 (开始) 传入: "sh600739"
         stock_code = query
     else:
         return f"获取评论节点收到的参数格式错误：需要一个字典 {{'stock_code': '...'}} 或一个字符串，但收到了 {type(query)}"
@@ -164,39 +165,36 @@ def get_guba_comments(query: Dict[str, Any]) -> str: # <---【关键修改 1】
     if not all_comment_titles:
         return f"未找到股票 {stock_code} 的任何评论。"
     
+    # 【重要】确保返回带 \n 的字符串
     commit_string = "\n".join(all_comment_titles)
     
     logging.info(f"为 {stock_code} 成功抓取 {len(all_comment_titles)} 条评论。")
     return commit_string
 
-# --- V3.0 (最终版): 修改情感分析工具的签名 ---
+# --- V6.0 (最终修复版): 还原为接收 String ---
 @mcp.tool()
 @guba_tool_handler 
-def analyze_guba_sentiment(result: Dict[str, Any]) -> str: 
+def analyze_guba_sentiment(comments_string: str) -> str: 
     """
     分析以换行符分隔的评论字符串，计算平均情感分数。
     
     Args:
-        result: 工作流平台传入的字典, 预期格式: {"result": "评论A\n评论B..."}
+        comments_string: 节点3传来的纯文本评论 (e.g., "评论A\n评论B...")
     """
     
-    # --- 从传入的字典中提取出字符串 ---
-    comments_string = "" # 默认值
-    if isinstance(result, dict) and "result" in result:
-        comments_string = result.get("result", "")
-    elif isinstance(result, str):
-        # 兜底：以防平台某天又直接传了字符串
-        comments_string = result
-    else:
-        return f"情感分析节点收到的参数格式错误：需要一个字典 {{'result': '...'}} 或一个字符串，但收到了 {type(result)}"
-    # -----------------------------------------------
-
+    # --- 【关键修改】: 还原为 V2.0 逻辑 ---
+    # 此时, comments_string *就是* 节点3的纯文本输出
+    
     if not comments_string or not comments_string.strip():
         return "没有可供分析的评论。"
         
     try:
-        # 按换行符分割成列表
-        comments = comments_string.strip().split('\n')
+        # --- 健壮性修复：处理单独测试时传入的 \\n ---
+        # 1. 将字面上的 \\n 替换为 真正的 \n
+        processed_comments = comments_string.replace("\\n", "\n")
+        
+        # 2. 按真实的 \n 分割
+        comments = processed_comments.strip().split('\n')
         total_score = 0
         valid_comments = 0
         
@@ -267,7 +265,7 @@ try:
     @mcp.prompt()
     def usage_guide() -> str:
         """提供使用指南"""
-        # --- V4.0: 更新 Guba 工具的示例 ---
+        # --- V6.0: 更新示例 ---
         return """欢迎使用股吧评论抓取工具！
 
 股票代码格式说明：
@@ -275,15 +273,15 @@ try:
 - 深圳证券交易所：sz + 6位数字，如 sz301011
 
 工具列表：
-1. get_guba_comments(query: Dict)
+1. get_guba_comments(query: Dict or Str)
    抓取评论标题。
-   (此工具用于接收 {"stock_code": "..."} 对象)
-   示例: > get_guba_comments({"stock_code": "sh600739"})
+   (此工具用于接收 {"stock_code": "..."} 对象, 或 "sh..." 字符串)
+   示例: > get_guba_comments("sh600739")
 
-2. analyze_guba_sentiment(result: Dict)
+2. analyze_guba_sentiment(comments_string: Str)
    分析评论情感。
-   (此工具用于接收上一步的 {"result": "..."} 对象)
-   示例: > analyze_guba_sentiment({"result": "评论A\n评论B"})
+   (此工具用于接收纯文本字符串)
+   示例: > analyze_guba_sentiment("评论A\n评论B")
 """
 
     # 注册路由
