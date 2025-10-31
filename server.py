@@ -57,7 +57,7 @@ PORT = int(os.environ.get("PORT", 8080))
 # --- 从 guba.py 引入的配置项 ---
 GUBA_LIST_URL_FORMAT = "https://guba.eastmoney.com/list,{stock_code}_{page}.html"
 HEADERS = {
-    'User-Agent': 'Mozilla.5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0',
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
     'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8', 'Connection': 'keep-alive',
     'Referer': 'https://guba.eastmoney.com/'
@@ -84,14 +84,14 @@ def normalize_stock_code(code: str) -> Optional[str]:
 
 # --- 4. 核心工具逻辑 ---
 
-# --- V6.0: 修复 NLP 翻译问题 & 适配平台 ---
+# --- V7.0: 适配节点1的 (String) 和 平台测试 (Dict) ---
 @mcp.tool()
 @guba_tool_handler
-def get_guba_comments(query: Dict[str, Any]) -> str:
+def get_guba_comments(query: Dict[str, Any]) -> str: 
     """抓取股吧前5页评论标题
     
     Args:
-        query: 一个字典, 预期格式: {"stock_code": "sh600739"}
+        query: 一个字典 (平台测试用) 或 字符串 (节点1传入)
         
     Returns:
         一个包含所有评论标题的字符串，以换行符（\n）分隔。
@@ -171,20 +171,34 @@ def get_guba_comments(query: Dict[str, Any]) -> str:
     logging.info(f"为 {stock_code} 成功抓取 {len(all_comment_titles)} 条评论。")
     return commit_string
 
-# --- V6.0 (最终修复版): 还原为接收 String ---
+# --- V7.0 (最终修复版): 还原为接收 Dict ---
 @mcp.tool()
 @guba_tool_handler 
-def analyze_guba_sentiment(comments_string: str) -> str: 
+def analyze_guba_sentiment(result: Dict[str, Any]) -> str: 
     """
     分析以换行符分隔的评论字符串，计算平均情感分数。
     
     Args:
-        comments_string: 节点3传来的纯文本评论 (e.g., "评论A\n评论B...")
+        result: 工作流平台传入的字典, 预期格式: {"result": "评论A\n评论B..."}
     """
     
-    # --- 【关键修改】: 还原为 V2.0 逻辑 ---
-    # 此时, comments_string *就是* 节点3的纯文本输出
+    # --- 【关键修改】: 还原为 V3.0/V5.0 逻辑 ---
+    # 平台将 {"result": "..."} (Dict) 传给此函数
     
+    comments_string = "" # 默认值
+    if isinstance(result, dict) and "result" in result:
+        # 正确: 传入的是 {"result": "A\nB"}
+        comments_string = result.get("result", "")
+    elif isinstance(result, str):
+        # 兜底: 兼容单独测试时传入 "A\nB" (如您的 Cherry Studio 测试)
+        # 【注意】您的 Cherry Studio 测试会从这里进入，并且 *失败*
+        # 因为 V6.0 证明了平台不会将 String 传给 Dict 参数
+        # 但我们保留这个兜底以防万一
+        comments_string = result
+    else:
+        return f"情感分析节点收到的参数格式错误：需要一个字典 {{'result': '...'}} 或一个字符串，但收到了 {type(result)}"
+    # -----------------------------------------------
+
     if not comments_string or not comments_string.strip():
         return "没有可供分析的评论。"
         
@@ -265,7 +279,7 @@ try:
     @mcp.prompt()
     def usage_guide() -> str:
         """提供使用指南"""
-        # --- V6.0: 更新示例 ---
+        # --- V7.0: 更新示例 ---
         return """欢迎使用股吧评论抓取工具！
 
 股票代码格式说明：
@@ -278,10 +292,10 @@ try:
    (此工具用于接收 {"stock_code": "..."} 对象, 或 "sh..." 字符串)
    示例: > get_guba_comments("sh600739")
 
-2. analyze_guba_sentiment(comments_string: Str)
+2. analyze_guba_sentiment(result: Dict)
    分析评论情感。
-   (此工具用于接收纯文本字符串)
-   示例: > analyze_guba_sentiment("评论A\n评论B")
+   (此工具用于接收平台包装的 {"result": "..."} 对象)
+   示例: > analyze_guba_sentiment({"result": "评论A\n评论B"})
 """
 
     # 注册路由
