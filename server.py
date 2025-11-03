@@ -62,7 +62,7 @@ HEADERS = {
     'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8', 'Connection': 'keep-alive',
     'Referer': 'https://guba.eastmoney.com/'
 }
-DEFAULT_PAGES_TO_SCRAPE = 5 # 抓取 5 页
+DEFAULT_PAGES_TO_SCRAPE = 3 # 抓取 5 页
 # --------------------------------
 
 logging.info("Guba MCP 服务配置加载完毕")
